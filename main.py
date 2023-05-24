@@ -13,6 +13,7 @@ import os.path
 import sys
 
 import orjson
+import stdiomask
 import win32api
 import win32con
 
@@ -24,12 +25,63 @@ from internal.util.setting import REFLECT_NAME
 
 class MyCLI(cmd.Cmd):
     person_info: PersonInfo = None
-    intro = '欢迎进入图书馆预约程序，请输入help或者?获取帮助。'
+    intro = '欢迎进入图书馆预约程序,可通过help或者?获取帮助.'
     prompt = '>> '
     record: dict = {}
     username, password = '', ''
     key = 'library_reservation_cli'
     priority: list[str] = []
+    doc_header= '提供的命令有(通过help command查看帮助):'
+    nohelp = '%s 命令不存在!'
+    undoc_header = ''
+
+    def do_help(self, arg: str):
+        'List available commands with "help" or detailed help with "help cmd".'
+        if arg:
+            # XXX check arg syntax
+            try:
+                func = getattr(self, 'help_' + arg)
+            except AttributeError:
+                try:
+                    doc = getattr(self, 'do_' + arg).__doc__
+                    if doc:
+                        self.stdout.write("%s\n" % str(doc))
+                        return
+                except AttributeError:
+                    pass
+                self.stdout.write("%s\n" % str(self.nohelp % (arg,)))
+                return
+            func()
+        else:
+            names = self.get_names()
+            cmds_doc = []
+            cmds_undoc = []
+            help = {}
+            for name in names:
+                if name[:5] == 'help_':
+                    help[name[5:]] = 1
+            names.sort()
+            # There can be duplicates if routines overridden
+            prevname = ''
+            for name in names:
+                if name[:3] == 'do_':
+                    if name == prevname:
+                        continue
+                    prevname = name
+                    cmd = name[3:]
+                    if cmd in help:
+                        cmds_doc.append(cmd)
+                        del help[cmd]
+                    elif getattr(self, name).__doc__:
+                        cmds_doc.append(cmd)
+                    else:
+                        cmds_undoc.append(cmd)
+            self.stdout.write("%s\n" % str(self.doc_leader))
+            self.print_topics(self.doc_header, cmds_doc, 15, 80)
+            self.print_topics(self.misc_header, list(help.keys()), 15, 80)
+            self.print_topics(self.undoc_header, cmds_undoc, 15, 80)
+            print('预约的正确流程:')
+            print('\tcheck -> set_priority -> make')
 
     def do_quit(self, arg):
         """退出程序并保存已有配置
@@ -72,11 +124,16 @@ class MyCLI(cmd.Cmd):
         status = self.read_config()
         if not status:
             self.username = input('Enter username:')
-            self.password = input('Enter password:')
+            self.password = stdiomask.getpass(prompt='Enter password:')
 
-        self.person_info = PersonInfo(self.username, self.password)
         print('登录中...')
-        self.person_info.prepare()
+        try:
+            self.person_info = PersonInfo(self.username, self.password)
+            self.person_info.prepare()
+        except Exception as err:
+            print(err)
+            return
+
         if self.person_info.get_identification() is not None:
             print('登录成功!')
             self.person_info.set_priority(self.priority)
@@ -162,11 +219,15 @@ class MyCLI(cmd.Cmd):
             return
         data = list(map(lambda x: self.record[x], args[1:]))
 
-        if is_self:
-            self.person_info.show_reservation()
-        elif start_append:
-            construction_info = get_construction_info(self.person_info.get_identification())
-            construction_info.show_area_with_spare(*data, gap=int(args[0]), show=True)
+        try:
+            if is_self:
+                self.person_info.show_reservation()
+            elif start_append:
+                construction_info = get_construction_info(self.person_info.get_identification())
+                construction_info.show_area_with_spare(*data, gap=int(args[0]), show=True)
+        except Exception as err:
+            print(err)
+            return
 
     def do_cancel(self, arg):
         """取消个人预约:
@@ -183,7 +244,11 @@ class MyCLI(cmd.Cmd):
             print('请输入正确的参数!')
             return
 
-        self.person_info.cancel_reservation(args[1])
+        try:
+            self.person_info.cancel_reservation(args[1])
+        except Exception as err:
+            print(err)
+            return
 
     def do_make(self, arg):
         """进行预约:
@@ -211,31 +276,35 @@ class MyCLI(cmd.Cmd):
             print('请输入正确的参数!')
             return
 
-        data = self.person_info.find_seat(start, end)
-        if len(data['not_successful']) == 0 and data['duration'] != '':
-            print('已为您找到合适的位置:')
-            print(
-                f"\t{data['room_name']}:{data['seat']}; from {data['duration'][0]} to {data['duration'][1]} is spare.")
-            print('开始预约...')
-            print(f'起始时间为:{start},终止时间为:{end}.')
-            self.person_info.make_reservation(start, end, data['dev_id'])
-        else:
-            print('暂未找到合适的位置,最大限度满足您的时间需求:')
-            for key, i in enumerate(data['not_successful']):
+        try:
+            data = self.person_info.find_seat(start, end)
+            if len(data['not_successful']) == 0 and data['duration'] != '':
+                print('已为您找到合适的位置:')
                 print(
-                    f"\tsequence number:{key + 1} - {i['room_name']}:{i['seat']}; from {i['duration'][0]} to {i['duration'][1]} is spare.")
-            ok = True
-            while ok:
+                    f"\t{data['room_name']}:{data['seat']}; from {data['duration'][0]} to {data['duration'][1]} is spare.")
+                print('开始预约...')
+                print(f'起始时间为:{start},终止时间为:{end}.')
+                self.person_info.make_reservation(start, end, data['dev_id'])
+            else:
+                print('暂未找到合适的位置,最大限度满足您的时间需求:')
+                for key, i in enumerate(data['not_successful']):
+                    print(
+                        f"\tsequence number:{key + 1} - {i['room_name']}:{i['seat']}; from {i['duration'][0]} to {i['duration'][1]} is spare.")
                 ok = True
-                index = int(input('请选择您觉得最合适的位置(sequence number):'))
-                if index > len(data['not_successful']) or index <= 0:
-                    print('请输入正确的sequence number!')
-                    ok = False
-            print('开始预约...')
-            print(
-                f"起始时间为:{data['not_successful'][index - 1]['duration'][0]},终止时间为:{data['not_successful'][index - 1]['duration'][1]}.")
-            self.person_info.make_reservation(data['not_successful'][index - 1]['duration'][0],
-                                              data['not_successful'][index - 1]['duration'][1])
+                while ok:
+                    ok = True
+                    index = int(input('请选择您觉得最合适的位置(sequence number):'))
+                    if index > len(data['not_successful']) or index <= 0:
+                        print('请输入正确的sequence number!')
+                        ok = False
+                print('开始预约...')
+                print(
+                    f"起始时间为:{data['not_successful'][index - 1]['duration'][0]},终止时间为:{data['not_successful'][index - 1]['duration'][1]}.")
+                self.person_info.make_reservation(data['not_successful'][index - 1]['duration'][0],
+                                                  data['not_successful'][index - 1]['duration'][1])
+        except Exception as err:
+            print(err)
+            return
 
 
 if __name__ == '__main__':

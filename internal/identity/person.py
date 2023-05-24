@@ -17,9 +17,9 @@ class PersonInfo:
 
     HISTORY_URL = 'http://kjyy.ccnu.edu.cn/ClientWeb/pro/ajax/center.aspx'
 
-    def __init__(self, username, password):
+    def __init__(self, username, password) :
         if username == "" or password == "":
-            raise Exception("the two parameter can't be empty.")
+            raise Exception("the two parameter username and password can't be empty.")
         self.__next_url = ""
         self.__lt = ""
         self.__execution = ""

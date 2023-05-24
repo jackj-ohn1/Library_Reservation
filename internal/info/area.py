@@ -10,7 +10,7 @@ from internal.util.util import *
 class AreaInfo:
     def __init__(self, class_no, session: requests.Session):
         if session is None:
-            raise Exception("__session can't be None!")
+            raise Exception("identification can't be None!")
         self.__session = session
         self.__LIBRARY_DATA_URL = "http://kjyy.ccnu.edu.cn/ClientWeb/pro/ajax/device.aspx"
 

@@ -9,7 +9,7 @@ class ConstructionInfo:
 
     def __init__(self, name: str, session: requests.Session):
         if session is None:
-            raise Exception("session can't be None!")
+            raise Exception("identification can't be None!")
 
         self.construction = name
 
@@ -63,7 +63,7 @@ class ConstructionInfo:
 
     def find_seat(self, start: str, end: str, priority: list):
         if start == '' or end == 'str':
-            raise Exception("time can't be empty!")
+            raise Exception("start time and end time can't be empty!")
 
         max_length = 0
         max_slot = None
@@ -78,7 +78,7 @@ class ConstructionInfo:
 
         for i in priority:
             if i not in REFLECT_NAME.keys() or REFLECT_NAME[i] not in self.__areas.keys():
-                raise Exception('the ele in list must is useful!')
+                raise Exception('the ele in priority que is not exist!!')
 
             not_successful: dict = {}
             for seat in self.__areas[REFLECT_NAME[i]].seat_info:
